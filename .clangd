@@ -1,0 +1,22 @@
+CompileFlags:
+  CompilationDatabase: build
+  Add:
+    - --target=arm-none-eabi
+    - -mcpu=cortex-m33
+    - -mthumb
+    - -DPICO_RP2350=1
+    - -Wno-unknown-warning-option
+    - -isystem/Users/kevinthomas/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include
+    - -isystem/Users/kevinthomas/.pico-sdk/toolchain/14_2_Rel1/lib/gcc/arm-none-eabi/14.2.1/include
+  Remove:
+    - -fno-shrink-wrap
+    - -fno-tree-switch-conversion
+    - -fstrict-volatile-bitfields
+    - -Wno-old-style-declaration
+
+Diagnostics:
+  UnusedIncludes: None
+  MissingIncludes: None
+  Suppress:
+    - unused-includes
+    - -Wunknown-warning-option

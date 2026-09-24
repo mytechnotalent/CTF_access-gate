@@ -1,0 +1,80 @@
+# MIT License
+#
+# Copyright (c) 2026 Kevin Thomas
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+# Author:  Kevin Thomas
+# Email:   kevin@mytechnotalent.com
+# GitHub:  https://github.com/mytechnotalent/cold-chain-monitor-c-rp2350
+# File:    .github/workflows/release.yml
+# Desc:    Builds the RP2350 firmware and publishes a GitHub Release
+#          with the uf2 binary whenever a "v*" tag is pushed.
+# Created: 2026
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Checkout Pico SDK
+        uses: actions/checkout@v4
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 2.2.0
+          path: pico-sdk
+          submodules: recursive
+
+      - name: Install Arm GNU toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: "14.2.Rel1"
+
+      - name: Install Python dependencies
+        run: python3 -m pip install --quiet pyserial
+
+      - name: Configure
+        env:
+          PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_MAKE_PROGRAM=ninja \
+            -DPICO_BOARD=pico2 -DPICO_PLATFORM=rp2350-arm-s
+
+      - name: Build
+        env:
+          PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
+        run: cmake --build build
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/access_gate_app.uf2
+          generate_release_notes: true

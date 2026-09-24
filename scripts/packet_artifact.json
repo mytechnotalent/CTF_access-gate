@@ -1,0 +1,15 @@
+{
+  "format": "access-gate-packets-demo-v1",
+  "frame_version": 1,
+  "node_id": 7,
+  "hub_address_hex": "0001",
+  "frame_size": 48,
+  "pin_length": 6,
+  "auth_wait_ms": 5000,
+  "servo_lock_pulse_us": 500,
+  "servo_open_pulse_us": 1500,
+  "dht_timeout_us": 240,
+  "lcd_i2c_address_hex": "27",
+  "max_rcv_len": 256,
+  "example_frame": "{\"req\":\"unlock\",\"pin\":\"4821\"}"
+}

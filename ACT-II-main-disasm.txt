@@ -1,0 +1,691 @@
+; =============================================================================
+; Disassembly of ACCESS GATE firmware (artifact ACT-II)
+; Binary: ACT-II_fixed.bin loaded at flash base 0x10000000
+; Architecture: ARM Cortex-M33 (Thumb-2), RP2350, Pico SDK 2.2.0
+; Toolchain: arm-none-eabi-gcc 14.2.0, -O3
+;
+; File offsets in this listing are VA - 0x10000000, matching the .bin.
+; Every defect is an in-place, same-size byte patch, so no address moves.
+;
+; -----------------------------------------------------------------------------
+; KEY FINDINGS - THE FOUR SABOTAGE SITES
+; -----------------------------------------------------------------------------
+;
+;   Defect 1 - Replay (auth_apply_grant)
+;     VA 0x10007F42  file 0x7F42
+;       d303  bcc.n 0x10007F4C   ; correct: last_seq < seq, so the grant is newer
+;     COMPROMISE: patch byte 0x7F43 0xD3 -> 0xD2 (bcc -> bcs)
+;     The anti-replay window is inverted, so a captured grant whose sequence is
+;     not strictly greater than last_seq is accepted.
+;
+;   Defect 2 - Forge (crypto_aead_open)
+;     VA 0x1000811C  file 0x811C
+;       d003  beq.n 0x10008126   ; correct: zero tag difference decrypts
+;     COMPROMISE: patch byte 0x811D 0xD0 -> 0xD1 (beq -> bne)
+;     A forged tag (non-zero difference) now jumps to the accept path.
+;
+;   Defect 3 - State (monitor_grant_release, inlined into monitor_rx_tick)
+;     VA 0x10006796  file 0x6796
+;       d0d3  beq.n 0x10006740   ; correct: auth_state_ok false denies
+;     COMPROMISE: patch byte 0x6797 0xD0 -> 0xD1 (beq -> bne)
+;     The authenticated-state check is bypassed, so a debugger that sets
+;     granted = 1 without recomputing the state tag opens the door.
+;
+;   Defect 4 - Fail-open (monitor_fail_mode, inlined into monitor_step)
+;     VA 0x10006BCA  file 0x6BCA
+;       b16b  cbz r3, 0x10006BE8 ; correct: g_fail_secure locks the bolt
+;     COMPROMISE: patch byte 0x6BCB 0xB1 -> 0xB9 (cbz -> cbnz)
+;     The authorization timeout now falls into servo_unlock, so a desk reply
+;     that never arrives leaves the bolt open (fail-open).
+;
+; Total intended changed bytes: 4. ACT-II.bin and ACT-II_fixed.bin differ in
+; exactly those four bytes and nothing else.
+;
+; =============================================================================
+
+
+; -----------------------------------------------------------------------------
+; main
+; -----------------------------------------------------------------------------
+10000234 <main>:
+10000234:	b508      	push	{r3, lr}
+10000236:	f003 fab7 	bl	100037a8 <stdio_init_all>
+1000023a:	4807      	ldr	r0, [pc, #28]	@ (10000258 <main+0x24>)
+1000023c:	f003 fafe 	bl	1000383c <__wrap_puts>
+10000240:	f006 fb0a 	bl	10006858 <monitor_init>
+10000244:	b110      	cbz	r0, 1000024c <main+0x18>
+10000246:	f006 fbc5 	bl	100069d4 <monitor_step>
+1000024a:	e7fc      	b.n	10000246 <main+0x12>
+1000024c:	4803      	ldr	r0, [pc, #12]	@ (1000025c <main+0x28>)
+1000024e:	f003 faf5 	bl	1000383c <__wrap_puts>
+10000252:	2001      	movs	r0, #1
+10000254:	bd08      	pop	{r3, pc}
+10000256:	bf00      	nop
+10000258:	1000aee8 	.word	0x1000aee8
+1000025c:	1000aef0 	.word	0x1000aef0
+
+
+
+; -----------------------------------------------------------------------------
+; monitor_rx_tick (contains monitor_grant_release and monitor_apply_reply)
+; -----------------------------------------------------------------------------
+10006704 <monitor_rx_tick>:
+10006704:	b570      	push	{r4, r5, r6, lr}
+10006706:	b0da      	sub	sp, #360	@ 0x168
+10006708:	e005      	b.n	10006716 <monitor_rx_tick+0x12>
+1000670a:	4842      	ldr	r0, [pc, #264]	@ (10006814 <monitor_rx_tick+0x110>)
+1000670c:	a917      	add	r1, sp, #92	@ 0x5c
+1000670e:	f001 f885 	bl	1000781c <radio_parse_rcv>
+10006712:	4604      	mov	r4, r0
+10006714:	b140      	cbz	r0, 10006728 <monitor_rx_tick+0x24>
+10006716:	4a40      	ldr	r2, [pc, #256]	@ (10006818 <monitor_rx_tick+0x114>)
+10006718:	493e      	ldr	r1, [pc, #248]	@ (10006814 <monitor_rx_tick+0x110>)
+1000671a:	4840      	ldr	r0, [pc, #256]	@ (1000681c <monitor_rx_tick+0x118>)
+1000671c:	f001 f984 	bl	10007a28 <radio_line_pump>
+10006720:	2800      	cmp	r0, #0
+10006722:	d1f2      	bne.n	1000670a <monitor_rx_tick+0x6>
+10006724:	b05a      	add	sp, #360	@ 0x168
+10006726:	bd70      	pop	{r4, r5, r6, pc}
+10006728:	9a18      	ldr	r2, [sp, #96]	@ 0x60
+1000672a:	f8bd 105c 	ldrh.w	r1, [sp, #92]	@ 0x5c
+1000672e:	483c      	ldr	r0, [pc, #240]	@ (10006820 <monitor_rx_tick+0x11c>)
+10006730:	f7fd f904 	bl	1000393c <__wrap_printf>
+10006734:	2207      	movs	r2, #7
+10006736:	4b3b      	ldr	r3, [pc, #236]	@ (10006824 <monitor_rx_tick+0x120>)
+10006738:	f88d 2017 	strb.w	r2, [sp, #23]
+1000673c:	781b      	ldrb	r3, [r3, #0]
+1000673e:	b93b      	cbnz	r3, 10006750 <monitor_rx_tick+0x4c>
+10006740:	4c39      	ldr	r4, [pc, #228]	@ (10006828 <monitor_rx_tick+0x124>)
+10006742:	f001 fa3d 	bl	10007bc0 <servo_lock>
+10006746:	2001      	movs	r0, #1
+10006748:	7020      	strb	r0, [r4, #0]
+1000674a:	f001 f9b7 	bl	10007abc <status_led_show>
+1000674e:	e7e2      	b.n	10006716 <monitor_rx_tick+0x12>
+10006750:	2330      	movs	r3, #48	@ 0x30
+10006752:	ae06      	add	r6, sp, #24
+10006754:	ad0b      	add	r5, sp, #44	@ 0x2c
+10006756:	9301      	str	r3, [sp, #4]
+10006758:	2201      	movs	r2, #1
+1000675a:	4834      	ldr	r0, [pc, #208]	@ (1000682c <monitor_rx_tick+0x128>)
+1000675c:	f10d 0117 	add.w	r1, sp, #23
+10006760:	9602      	str	r6, [sp, #8]
+10006762:	9500      	str	r5, [sp, #0]
+10006764:	ab19      	add	r3, sp, #100	@ 0x64
+10006766:	f001 fd8f 	bl	10008288 <envelope_open_hex>
+1000676a:	2800      	cmp	r0, #0
+1000676c:	d0e8      	beq.n	10006740 <monitor_rx_tick+0x3c>
+1000676e:	6833      	ldr	r3, [r6, #0]
+10006770:	2b13      	cmp	r3, #19
+10006772:	d9e5      	bls.n	10006740 <monitor_rx_tick+0x3c>
+10006774:	f10d 0c1c 	add.w	ip, sp, #28
+10006778:	ab0c      	add	r3, sp, #48	@ 0x30
+1000677a:	cb0f      	ldmia	r3, {r0, r1, r2, r3}
+1000677c:	e88c 000f 	stmia.w	ip, {r0, r1, r2, r3}
+10006780:	4662      	mov	r2, ip
+10006782:	482b      	ldr	r0, [pc, #172]	@ (10006830 <monitor_rx_tick+0x12c>)
+10006784:	6829      	ldr	r1, [r5, #0]
+10006786:	f001 fbd1 	bl	10007f2c <auth_apply_grant>
+1000678a:	2800      	cmp	r0, #0
+1000678c:	d0d8      	beq.n	10006740 <monitor_rx_tick+0x3c>
+1000678e:	4828      	ldr	r0, [pc, #160]	@ (10006830 <monitor_rx_tick+0x12c>)
+10006790:	f001 fb76 	bl	10007e80 <auth_state_ok>
+10006794:	2800      	cmp	r0, #0
+10006796:	d0d3      	beq.n	10006740 <monitor_rx_tick+0x3c>
+    ; DEFECT 3 STATE: beq (auth_state_ok false denies). ACT-II.bin flips 0x6797 0xD0 -> 0xD1 (bne).
+10006798:	4628      	mov	r0, r5
+1000679a:	f000 fc71 	bl	10007080 <sensor_read>
+1000679e:	bb58      	cbnz	r0, 100067f8 <monitor_rx_tick+0xf4>
+100067a0:	4628      	mov	r0, r5
+100067a2:	f000 fc47 	bl	10007034 <sensor_climate_ok>
+100067a6:	4c20      	ldr	r4, [pc, #128]	@ (10006828 <monitor_rx_tick+0x124>)
+100067a8:	4e22      	ldr	r6, [pc, #136]	@ (10006834 <monitor_rx_tick+0x130>)
+100067aa:	f9b5 1000 	ldrsh.w	r1, [r5]
+100067ae:	7030      	strb	r0, [r6, #0]
+100067b0:	7820      	ldrb	r0, [r4, #0]
+100067b2:	886a      	ldrh	r2, [r5, #2]
+100067b4:	2801      	cmp	r0, #1
+100067b6:	792b      	ldrb	r3, [r5, #4]
+100067b8:	d025      	beq.n	10006806 <monitor_rx_tick+0x102>
+100067ba:	2802      	cmp	r0, #2
+100067bc:	d025      	beq.n	1000680a <monitor_rx_tick+0x106>
+100067be:	2803      	cmp	r0, #3
+100067c0:	d025      	beq.n	1000680e <monitor_rx_tick+0x10a>
+100067c2:	481d      	ldr	r0, [pc, #116]	@ (10006838 <monitor_rx_tick+0x134>)
+100067c4:	9000      	str	r0, [sp, #0]
+100067c6:	481a      	ldr	r0, [pc, #104]	@ (10006830 <monitor_rx_tick+0x12c>)
+100067c8:	6880      	ldr	r0, [r0, #8]
+100067ca:	9001      	str	r0, [sp, #4]
+100067cc:	481b      	ldr	r0, [pc, #108]	@ (1000683c <monitor_rx_tick+0x138>)
+100067ce:	f7fd f8b5 	bl	1000393c <__wrap_printf>
+100067d2:	7833      	ldrb	r3, [r6, #0]
+100067d4:	2b00      	cmp	r3, #0
+100067d6:	d0b4      	beq.n	10006742 <monitor_rx_tick+0x3e>
+100067d8:	f001 fa00 	bl	10007bdc <servo_unlock>
+100067dc:	2003      	movs	r0, #3
+100067de:	7020      	strb	r0, [r4, #0]
+100067e0:	f001 f96c 	bl	10007abc <status_led_show>
+100067e4:	f7fa fe16 	bl	10001414 <time_us_64>
+100067e8:	4b15      	ldr	r3, [pc, #84]	@ (10006840 <monitor_rx_tick+0x13c>)
+100067ea:	18c0      	adds	r0, r0, r3
+100067ec:	4b15      	ldr	r3, [pc, #84]	@ (10006844 <monitor_rx_tick+0x140>)
+100067ee:	f141 0100 	adc.w	r1, r1, #0
+100067f2:	e9c3 0100 	strd	r0, r1, [r3]
+100067f6:	e78e      	b.n	10006716 <monitor_rx_tick+0x12>
+100067f8:	4b0e      	ldr	r3, [pc, #56]	@ (10006834 <monitor_rx_tick+0x130>)
+100067fa:	4813      	ldr	r0, [pc, #76]	@ (10006848 <monitor_rx_tick+0x144>)
+100067fc:	701c      	strb	r4, [r3, #0]
+100067fe:	f7fd f81d 	bl	1000383c <__wrap_puts>
+10006802:	4c09      	ldr	r4, [pc, #36]	@ (10006828 <monitor_rx_tick+0x124>)
+10006804:	e79d      	b.n	10006742 <monitor_rx_tick+0x3e>
+10006806:	4811      	ldr	r0, [pc, #68]	@ (1000684c <monitor_rx_tick+0x148>)
+10006808:	e7dc      	b.n	100067c4 <monitor_rx_tick+0xc0>
+1000680a:	4811      	ldr	r0, [pc, #68]	@ (10006850 <monitor_rx_tick+0x14c>)
+1000680c:	e7da      	b.n	100067c4 <monitor_rx_tick+0xc0>
+1000680e:	4811      	ldr	r0, [pc, #68]	@ (10006854 <monitor_rx_tick+0x150>)
+10006810:	e7d8      	b.n	100067c4 <monitor_rx_tick+0xc0>
+10006812:	bf00      	nop
+10006814:	200133cc 	.word	0x200133cc
+10006818:	200133c8 	.word	0x200133c8
+1000681c:	40078000 	.word	0x40078000
+10006820:	1000b0b0 	.word	0x1000b0b0
+10006824:	20013969 	.word	0x20013969
+10006828:	20013970 	.word	0x20013970
+1000682c:	20013378 	.word	0x20013378
+10006830:	20013334 	.word	0x20013334
+10006834:	20013966 	.word	0x20013966
+10006838:	1000b0a4 	.word	0x1000b0a4
+1000683c:	1000b0ec 	.word	0x1000b0ec
+10006840:	004c4b40 	.word	0x004c4b40
+10006844:	20012828 	.word	0x20012828
+10006848:	1000b0cc 	.word	0x1000b0cc
+1000684c:	1000b094 	.word	0x1000b094
+10006850:	1000b09c 	.word	0x1000b09c
+10006854:	1000b0a8 	.word	0x1000b0a8
+
+
+
+; -----------------------------------------------------------------------------
+; monitor_step (contains monitor_fail_mode and monitor_expire)
+; -----------------------------------------------------------------------------
+100069d4 <monitor_step>:
+100069d4:	e92d 47f0 	stmdb	sp!, {r4, r5, r6, r7, r8, r9, sl, lr}
+100069d8:	4bb5      	ldr	r3, [pc, #724]	@ (10006cb0 <monitor_step+0x2dc>)
+100069da:	b0bc      	sub	sp, #240	@ 0xf0
+100069dc:	781c      	ldrb	r4, [r3, #0]
+100069de:	b91c      	cbnz	r4, 100069e8 <monitor_step+0x14>
+100069e0:	4620      	mov	r0, r4
+100069e2:	b03c      	add	sp, #240	@ 0xf0
+100069e4:	e8bd 87f0 	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, sl, pc}
+100069e8:	f7fa fd14 	bl	10001414 <time_us_64>
+100069ec:	4ab1      	ldr	r2, [pc, #708]	@ (10006cb4 <monitor_step+0x2e0>)
+100069ee:	4607      	mov	r7, r0
+100069f0:	6813      	ldr	r3, [r2, #0]
+100069f2:	468a      	mov	sl, r1
+100069f4:	3301      	adds	r3, #1
+100069f6:	2b03      	cmp	r3, #3
+100069f8:	f240 80cc 	bls.w	10006b94 <monitor_step+0x1c0>
+100069fc:	2500      	movs	r5, #0
+100069fe:	49ae      	ldr	r1, [pc, #696]	@ (10006cb8 <monitor_step+0x2e4>)
+10006a00:	2019      	movs	r0, #25
+10006a02:	780b      	ldrb	r3, [r1, #0]
+10006a04:	6015      	str	r5, [r2, #0]
+10006a06:	f083 0301 	eor.w	r3, r3, #1
+10006a0a:	700b      	strb	r3, [r1, #0]
+10006a0c:	ec43 0040 	mcrr	0, 4, r0, r3, cr0
+10006a10:	f7ff fe78 	bl	10006704 <monitor_rx_tick>
+10006a14:	f001 f87c 	bl	10007b10 <rex_consume_press>
+10006a18:	2800      	cmp	r0, #0
+10006a1a:	d164      	bne.n	10006ae6 <monitor_step+0x112>
+10006a1c:	4da7      	ldr	r5, [pc, #668]	@ (10006cbc <monitor_step+0x2e8>)
+10006a1e:	f8df 82f8 	ldr.w	r8, [pc, #760]	@ 10006d18 <monitor_step+0x344>
+10006a22:	a806      	add	r0, sp, #24
+10006a24:	f001 f93e 	bl	10007ca4 <ir_remote_poll>
+10006a28:	b390      	cbz	r0, 10006a90 <monitor_step+0xbc>
+10006a2a:	f89d 201a 	ldrb.w	r2, [sp, #26]
+10006a2e:	2a46      	cmp	r2, #70	@ 0x46
+10006a30:	f000 80aa 	beq.w	10006b88 <monitor_step+0x1b4>
+10006a34:	2a45      	cmp	r2, #69	@ 0x45
+10006a36:	f000 8132 	beq.w	10006c9e <monitor_step+0x2ca>
+10006a3a:	49a1      	ldr	r1, [pc, #644]	@ (10006cc0 <monitor_step+0x2ec>)
+10006a3c:	48a1      	ldr	r0, [pc, #644]	@ (10006cc4 <monitor_step+0x2f0>)
+10006a3e:	f7fc ff7d 	bl	1000393c <__wrap_printf>
+10006a42:	f89d 301a 	ldrb.w	r3, [sp, #26]
+10006a46:	2b46      	cmp	r3, #70	@ 0x46
+10006a48:	f000 80df 	beq.w	10006c0a <monitor_step+0x236>
+10006a4c:	2b45      	cmp	r3, #69	@ 0x45
+10006a4e:	f000 8128 	beq.w	10006ca2 <monitor_step+0x2ce>
+10006a52:	2b16      	cmp	r3, #22
+10006a54:	f000 809a 	beq.w	10006b8c <monitor_step+0x1b8>
+10006a58:	2b0c      	cmp	r3, #12
+10006a5a:	f000 8172 	beq.w	10006d42 <monitor_step+0x36e>
+10006a5e:	2b18      	cmp	r3, #24
+10006a60:	f000 8171 	beq.w	10006d46 <monitor_step+0x372>
+10006a64:	2b5e      	cmp	r3, #94	@ 0x5e
+10006a66:	f000 8170 	beq.w	10006d4a <monitor_step+0x376>
+10006a6a:	2b08      	cmp	r3, #8
+10006a6c:	f000 816f 	beq.w	10006d4e <monitor_step+0x37a>
+10006a70:	2b1c      	cmp	r3, #28
+10006a72:	f000 816e 	beq.w	10006d52 <monitor_step+0x37e>
+10006a76:	2b5a      	cmp	r3, #90	@ 0x5a
+10006a78:	f000 816d 	beq.w	10006d56 <monitor_step+0x382>
+10006a7c:	2b42      	cmp	r3, #66	@ 0x42
+10006a7e:	f000 816c 	beq.w	10006d5a <monitor_step+0x386>
+10006a82:	2b52      	cmp	r3, #82	@ 0x52
+10006a84:	f000 816b 	beq.w	10006d5e <monitor_step+0x38a>
+10006a88:	2b4a      	cmp	r3, #74	@ 0x4a
+10006a8a:	bf08      	it	eq
+10006a8c:	2009      	moveq	r0, #9
+10006a8e:	d07e      	beq.n	10006b8e <monitor_step+0x1ba>
+10006a90:	782b      	ldrb	r3, [r5, #0]
+10006a92:	2b02      	cmp	r3, #2
+10006a94:	f000 808f 	beq.w	10006bb6 <monitor_step+0x1e2>
+10006a98:	2b03      	cmp	r3, #3
+10006a9a:	d07d      	beq.n	10006b98 <monitor_step+0x1c4>
+10006a9c:	f8d8 2008 	ldr.w	r2, [r8, #8]
+10006aa0:	4b89      	ldr	r3, [pc, #548]	@ (10006cc8 <monitor_step+0x2f4>)
+10006aa2:	9200      	str	r2, [sp, #0]
+10006aa4:	2111      	movs	r1, #17
+10006aa6:	4a89      	ldr	r2, [pc, #548]	@ (10006ccc <monitor_step+0x2f8>)
+10006aa8:	4889      	ldr	r0, [pc, #548]	@ (10006cd0 <monitor_step+0x2fc>)
+10006aaa:	f7fc fd0d 	bl	100034c8 <__wrap_snprintf>
+10006aae:	782b      	ldrb	r3, [r5, #0]
+10006ab0:	2b01      	cmp	r3, #1
+10006ab2:	f000 8093 	beq.w	10006bdc <monitor_step+0x208>
+10006ab6:	2b02      	cmp	r3, #2
+10006ab8:	f000 8092 	beq.w	10006be0 <monitor_step+0x20c>
+10006abc:	2b03      	cmp	r3, #3
+10006abe:	f000 8091 	beq.w	10006be4 <monitor_step+0x210>
+10006ac2:	4b84      	ldr	r3, [pc, #528]	@ (10006cd4 <monitor_step+0x300>)
+10006ac4:	2111      	movs	r1, #17
+10006ac6:	4a84      	ldr	r2, [pc, #528]	@ (10006cd8 <monitor_step+0x304>)
+10006ac8:	4884      	ldr	r0, [pc, #528]	@ (10006cdc <monitor_step+0x308>)
+10006aca:	f7fc fcfd 	bl	100034c8 <__wrap_snprintf>
+10006ace:	4984      	ldr	r1, [pc, #528]	@ (10006ce0 <monitor_step+0x30c>)
+10006ad0:	4884      	ldr	r0, [pc, #528]	@ (10006ce4 <monitor_step+0x310>)
+10006ad2:	4b82      	ldr	r3, [pc, #520]	@ (10006cdc <monitor_step+0x308>)
+10006ad4:	4a7e      	ldr	r2, [pc, #504]	@ (10006cd0 <monitor_step+0x2fc>)
+10006ad6:	7809      	ldrb	r1, [r1, #0]
+10006ad8:	6800      	ldr	r0, [r0, #0]
+10006ada:	f000 fcf5 	bl	100074c8 <display_render_lines>
+10006ade:	4620      	mov	r0, r4
+10006ae0:	b03c      	add	sp, #240	@ 0xf0
+10006ae2:	e8bd 87f0 	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, sl, pc}
+10006ae6:	4880      	ldr	r0, [pc, #512]	@ (10006ce8 <monitor_step+0x314>)
+10006ae8:	f7fc fea8 	bl	1000383c <__wrap_puts>
+10006aec:	a80f      	add	r0, sp, #60	@ 0x3c
+10006aee:	f000 fac7 	bl	10007080 <sensor_read>
+10006af2:	2800      	cmp	r0, #0
+10006af4:	d138      	bne.n	10006b68 <monitor_step+0x194>
+10006af6:	a80f      	add	r0, sp, #60	@ 0x3c
+10006af8:	f000 fa9c 	bl	10007034 <sensor_climate_ok>
+10006afc:	4d6f      	ldr	r5, [pc, #444]	@ (10006cbc <monitor_step+0x2e8>)
+10006afe:	f8df 91f8 	ldr.w	r9, [pc, #504]	@ 10006cf8 <monitor_step+0x324>
+10006b02:	f895 c000 	ldrb.w	ip, [r5]
+10006b06:	f9bd 103c 	ldrsh.w	r1, [sp, #60]	@ 0x3c
+10006b0a:	f1bc 0f01 	cmp.w	ip, #1
+10006b0e:	f8bd 203e 	ldrh.w	r2, [sp, #62]	@ 0x3e
+10006b12:	f89d 3040 	ldrb.w	r3, [sp, #64]	@ 0x40
+10006b16:	f889 0000 	strb.w	r0, [r9]
+10006b1a:	f000 80c5 	beq.w	10006ca8 <monitor_step+0x2d4>
+10006b1e:	f1bc 0f02 	cmp.w	ip, #2
+10006b22:	f000 80c3 	beq.w	10006cac <monitor_step+0x2d8>
+10006b26:	f1bc 0f03 	cmp.w	ip, #3
+10006b2a:	f000 8101 	beq.w	10006d30 <monitor_step+0x35c>
+10006b2e:	4869      	ldr	r0, [pc, #420]	@ (10006cd4 <monitor_step+0x300>)
+10006b30:	f8df 81e4 	ldr.w	r8, [pc, #484]	@ 10006d18 <monitor_step+0x344>
+10006b34:	9000      	str	r0, [sp, #0]
+10006b36:	f8d8 6008 	ldr.w	r6, [r8, #8]
+10006b3a:	486c      	ldr	r0, [pc, #432]	@ (10006cec <monitor_step+0x318>)
+10006b3c:	9601      	str	r6, [sp, #4]
+10006b3e:	f7fc fefd 	bl	1000393c <__wrap_printf>
+10006b42:	f899 3000 	ldrb.w	r3, [r9]
+10006b46:	b1c3      	cbz	r3, 10006b7a <monitor_step+0x1a6>
+10006b48:	f001 f848 	bl	10007bdc <servo_unlock>
+10006b4c:	2003      	movs	r0, #3
+10006b4e:	7028      	strb	r0, [r5, #0]
+10006b50:	f000 ffb4 	bl	10007abc <status_led_show>
+10006b54:	f7fa fc5e 	bl	10001414 <time_us_64>
+10006b58:	4b65      	ldr	r3, [pc, #404]	@ (10006cf0 <monitor_step+0x31c>)
+10006b5a:	18c0      	adds	r0, r0, r3
+10006b5c:	4b65      	ldr	r3, [pc, #404]	@ (10006cf4 <monitor_step+0x320>)
+10006b5e:	f141 0100 	adc.w	r1, r1, #0
+10006b62:	e9c3 0100 	strd	r0, r1, [r3]
+10006b66:	e75c      	b.n	10006a22 <monitor_step+0x4e>
+10006b68:	2200      	movs	r2, #0
+10006b6a:	4b63      	ldr	r3, [pc, #396]	@ (10006cf8 <monitor_step+0x324>)
+10006b6c:	4863      	ldr	r0, [pc, #396]	@ (10006cfc <monitor_step+0x328>)
+10006b6e:	701a      	strb	r2, [r3, #0]
+10006b70:	f7fc fe64 	bl	1000383c <__wrap_puts>
+10006b74:	4d51      	ldr	r5, [pc, #324]	@ (10006cbc <monitor_step+0x2e8>)
+10006b76:	f8df 81a0 	ldr.w	r8, [pc, #416]	@ 10006d18 <monitor_step+0x344>
+10006b7a:	f001 f821 	bl	10007bc0 <servo_lock>
+10006b7e:	2001      	movs	r0, #1
+10006b80:	7028      	strb	r0, [r5, #0]
+10006b82:	f000 ff9b 	bl	10007abc <status_led_show>
+10006b86:	e74c      	b.n	10006a22 <monitor_step+0x4e>
+10006b88:	495d      	ldr	r1, [pc, #372]	@ (10006d00 <monitor_step+0x32c>)
+10006b8a:	e757      	b.n	10006a3c <monitor_step+0x68>
+10006b8c:	2000      	movs	r0, #0
+10006b8e:	f001 f8d3 	bl	10007d38 <keypad_push_digit>
+10006b92:	e77d      	b.n	10006a90 <monitor_step+0xbc>
+10006b94:	6013      	str	r3, [r2, #0]
+10006b96:	e73b      	b.n	10006a10 <monitor_step+0x3c>
+10006b98:	4b56      	ldr	r3, [pc, #344]	@ (10006cf4 <monitor_step+0x320>)
+10006b9a:	e9d3 2300 	ldrd	r2, r3, [r3]
+10006b9e:	4297      	cmp	r7, r2
+10006ba0:	eb7a 0303 	sbcs.w	r3, sl, r3
+10006ba4:	f4ff af7a 	bcc.w	10006a9c <monitor_step+0xc8>
+10006ba8:	f001 f80a 	bl	10007bc0 <servo_lock>
+10006bac:	2000      	movs	r0, #0
+10006bae:	7028      	strb	r0, [r5, #0]
+10006bb0:	f000 ff84 	bl	10007abc <status_led_show>
+10006bb4:	e772      	b.n	10006a9c <monitor_step+0xc8>
+10006bb6:	4b53      	ldr	r3, [pc, #332]	@ (10006d04 <monitor_step+0x330>)
+10006bb8:	e9d3 2300 	ldrd	r2, r3, [r3]
+10006bbc:	4297      	cmp	r7, r2
+10006bbe:	eb7a 0303 	sbcs.w	r3, sl, r3
+10006bc2:	f4ff af6b 	bcc.w	10006a9c <monitor_step+0xc8>
+10006bc6:	4b50      	ldr	r3, [pc, #320]	@ (10006d08 <monitor_step+0x334>)
+10006bc8:	781b      	ldrb	r3, [r3, #0]
+10006bca:	b16b      	cbz	r3, 10006be8 <monitor_step+0x214>
+    ; DEFECT 4 FAIL-OPEN: cbz (g_fail_secure locks). ACT-II.bin flips 0x6BCB 0xB1 -> 0xB9 (cbnz).
+10006bcc:	f000 fff8 	bl	10007bc0 <servo_lock>
+10006bd0:	2001      	movs	r0, #1
+10006bd2:	7028      	strb	r0, [r5, #0]
+10006bd4:	f000 ff72 	bl	10007abc <status_led_show>
+10006bd8:	782b      	ldrb	r3, [r5, #0]
+10006bda:	e75d      	b.n	10006a98 <monitor_step+0xc4>
+10006bdc:	4b4b      	ldr	r3, [pc, #300]	@ (10006d0c <monitor_step+0x338>)
+10006bde:	e771      	b.n	10006ac4 <monitor_step+0xf0>
+10006be0:	4b4b      	ldr	r3, [pc, #300]	@ (10006d10 <monitor_step+0x33c>)
+10006be2:	e76f      	b.n	10006ac4 <monitor_step+0xf0>
+10006be4:	4b4b      	ldr	r3, [pc, #300]	@ (10006d14 <monitor_step+0x340>)
+10006be6:	e76d      	b.n	10006ac4 <monitor_step+0xf0>
+10006be8:	f000 fff8 	bl	10007bdc <servo_unlock>
+10006bec:	2003      	movs	r0, #3
+10006bee:	7028      	strb	r0, [r5, #0]
+10006bf0:	f000 ff64 	bl	10007abc <status_led_show>
+10006bf4:	f7fa fc0e 	bl	10001414 <time_us_64>
+10006bf8:	4b3d      	ldr	r3, [pc, #244]	@ (10006cf0 <monitor_step+0x31c>)
+10006bfa:	18c0      	adds	r0, r0, r3
+10006bfc:	4b3d      	ldr	r3, [pc, #244]	@ (10006cf4 <monitor_step+0x320>)
+10006bfe:	f141 0100 	adc.w	r1, r1, #0
+10006c02:	e9c3 0100 	strd	r0, r1, [r3]
+10006c06:	782b      	ldrb	r3, [r5, #0]
+10006c08:	e746      	b.n	10006a98 <monitor_step+0xc4>
+10006c0a:	f001 f8b9 	bl	10007d80 <keypad_enter>
+10006c0e:	2800      	cmp	r0, #0
+10006c10:	f43f af3e 	beq.w	10006a90 <monitor_step+0xbc>
+10006c14:	2107      	movs	r1, #7
+10006c16:	a807      	add	r0, sp, #28
+10006c18:	f001 f8c2 	bl	10007da0 <keypad_get_pin>
+10006c1c:	2800      	cmp	r0, #0
+10006c1e:	f43f af37 	beq.w	10006a90 <monitor_step+0xbc>
+10006c22:	483d      	ldr	r0, [pc, #244]	@ (10006d18 <monitor_step+0x344>)
+10006c24:	f001 f920 	bl	10007e68 <auth_begin_request>
+10006c28:	ab07      	add	r3, sp, #28
+10006c2a:	2107      	movs	r1, #7
+10006c2c:	4a3b      	ldr	r2, [pc, #236]	@ (10006d1c <monitor_step+0x348>)
+10006c2e:	4826      	ldr	r0, [pc, #152]	@ (10006cc8 <monitor_step+0x2f4>)
+10006c30:	f7fc fc4a 	bl	100034c8 <__wrap_snprintf>
+10006c34:	4b3a      	ldr	r3, [pc, #232]	@ (10006d20 <monitor_step+0x34c>)
+10006c36:	781b      	ldrb	r3, [r3, #0]
+10006c38:	2b00      	cmp	r3, #0
+10006c3a:	d07b      	beq.n	10006d34 <monitor_step+0x360>
+10006c3c:	2307      	movs	r3, #7
+10006c3e:	a809      	add	r0, sp, #36	@ 0x24
+10006c40:	f88d 3017 	strb.w	r3, [sp, #23]
+10006c44:	f001 fab4 	bl	100081b0 <envelope_fill_nonce>
+10006c48:	a807      	add	r0, sp, #28
+10006c4a:	f004 f8cf 	bl	1000adec <strlen>
+10006c4e:	ab07      	add	r3, sp, #28
+10006c50:	e9cd 3000 	strd	r3, r0, [sp]
+10006c54:	23b1      	movs	r3, #177	@ 0xb1
+10006c56:	f10d 093c 	add.w	r9, sp, #60	@ 0x3c
+10006c5a:	9303      	str	r3, [sp, #12]
+10006c5c:	4831      	ldr	r0, [pc, #196]	@ (10006d24 <monitor_step+0x350>)
+10006c5e:	2301      	movs	r3, #1
+10006c60:	a909      	add	r1, sp, #36	@ 0x24
+10006c62:	f8cd 9008 	str.w	r9, [sp, #8]
+10006c66:	f10d 0217 	add.w	r2, sp, #23
+10006c6a:	f001 faad 	bl	100081c8 <envelope_seal_hex>
+10006c6e:	2800      	cmp	r0, #0
+10006c70:	d060      	beq.n	10006d34 <monitor_step+0x360>
+10006c72:	4648      	mov	r0, r9
+10006c74:	f004 f8ba 	bl	1000adec <strlen>
+10006c78:	4649      	mov	r1, r9
+10006c7a:	4602      	mov	r2, r0
+10006c7c:	482a      	ldr	r0, [pc, #168]	@ (10006d28 <monitor_step+0x354>)
+10006c7e:	f000 fd9f 	bl	100077c0 <radio_send_frame>
+10006c82:	2002      	movs	r0, #2
+10006c84:	7028      	strb	r0, [r5, #0]
+10006c86:	f000 ff19 	bl	10007abc <status_led_show>
+10006c8a:	f7fa fbc3 	bl	10001414 <time_us_64>
+10006c8e:	4b18      	ldr	r3, [pc, #96]	@ (10006cf0 <monitor_step+0x31c>)
+10006c90:	18c0      	adds	r0, r0, r3
+10006c92:	4b1c      	ldr	r3, [pc, #112]	@ (10006d04 <monitor_step+0x330>)
+10006c94:	f141 0100 	adc.w	r1, r1, #0
+10006c98:	e9c3 0100 	strd	r0, r1, [r3]
+10006c9c:	e6f8      	b.n	10006a90 <monitor_step+0xbc>
+10006c9e:	4923      	ldr	r1, [pc, #140]	@ (10006d2c <monitor_step+0x358>)
+10006ca0:	e6cc      	b.n	10006a3c <monitor_step+0x68>
+10006ca2:	f001 f863 	bl	10007d6c <keypad_clear>
+10006ca6:	e6f3      	b.n	10006a90 <monitor_step+0xbc>
+10006ca8:	4818      	ldr	r0, [pc, #96]	@ (10006d0c <monitor_step+0x338>)
+10006caa:	e741      	b.n	10006b30 <monitor_step+0x15c>
+10006cac:	4818      	ldr	r0, [pc, #96]	@ (10006d10 <monitor_step+0x33c>)
+10006cae:	e73f      	b.n	10006b30 <monitor_step+0x15c>
+10006cb0:	2001396c 	.word	0x2001396c
+10006cb4:	20013370 	.word	0x20013370
+10006cb8:	20013967 	.word	0x20013967
+10006cbc:	20013970 	.word	0x20013970
+10006cc0:	1000b218 	.word	0x1000b218
+10006cc4:	1000b250 	.word	0x1000b250
+10006cc8:	20013398 	.word	0x20013398
+10006ccc:	1000b264 	.word	0x1000b264
+10006cd0:	200133a0 	.word	0x200133a0
+10006cd4:	1000b0a4 	.word	0x1000b0a4
+10006cd8:	1000b274 	.word	0x1000b274
+10006cdc:	200133b4 	.word	0x200133b4
+10006ce0:	20013968 	.word	0x20013968
+10006ce4:	20013374 	.word	0x20013374
+10006ce8:	1000b228 	.word	0x1000b228
+10006cec:	1000b0ec 	.word	0x1000b0ec
+10006cf0:	004c4b40 	.word	0x004c4b40
+10006cf4:	20012828 	.word	0x20012828
+10006cf8:	20013966 	.word	0x20013966
+10006cfc:	1000b0cc 	.word	0x1000b0cc
+10006d00:	1000b210 	.word	0x1000b210
+10006d04:	20012838 	.word	0x20012838
+10006d08:	20001254 	.word	0x20001254
+10006d0c:	1000b094 	.word	0x1000b094
+10006d10:	1000b09c 	.word	0x1000b09c
+10006d14:	1000b0a8 	.word	0x1000b0a8
+10006d18:	20013334 	.word	0x20013334
+10006d1c:	1000b260 	.word	0x1000b260
+10006d20:	20013969 	.word	0x20013969
+10006d24:	20013378 	.word	0x20013378
+10006d28:	40078000 	.word	0x40078000
+10006d2c:	1000b220 	.word	0x1000b220
+10006d30:	480c      	ldr	r0, [pc, #48]	@ (10006d64 <monitor_step+0x390>)
+10006d32:	e6fd      	b.n	10006b30 <monitor_step+0x15c>
+10006d34:	f000 ff44 	bl	10007bc0 <servo_lock>
+10006d38:	2001      	movs	r0, #1
+10006d3a:	7028      	strb	r0, [r5, #0]
+10006d3c:	f000 febe 	bl	10007abc <status_led_show>
+10006d40:	e6a6      	b.n	10006a90 <monitor_step+0xbc>
+10006d42:	2001      	movs	r0, #1
+10006d44:	e723      	b.n	10006b8e <monitor_step+0x1ba>
+10006d46:	2002      	movs	r0, #2
+10006d48:	e721      	b.n	10006b8e <monitor_step+0x1ba>
+10006d4a:	2003      	movs	r0, #3
+10006d4c:	e71f      	b.n	10006b8e <monitor_step+0x1ba>
+10006d4e:	2004      	movs	r0, #4
+10006d50:	e71d      	b.n	10006b8e <monitor_step+0x1ba>
+10006d52:	2005      	movs	r0, #5
+10006d54:	e71b      	b.n	10006b8e <monitor_step+0x1ba>
+10006d56:	2006      	movs	r0, #6
+10006d58:	e719      	b.n	10006b8e <monitor_step+0x1ba>
+10006d5a:	2007      	movs	r0, #7
+10006d5c:	e717      	b.n	10006b8e <monitor_step+0x1ba>
+10006d5e:	2008      	movs	r0, #8
+10006d60:	e715      	b.n	10006b8e <monitor_step+0x1ba>
+10006d62:	bf00      	nop
+10006d64:	1000b0a8 	.word	0x1000b0a8
+
+
+
+; -----------------------------------------------------------------------------
+; auth_apply_grant
+; -----------------------------------------------------------------------------
+10007f2c <auth_apply_grant>:
+10007f2c:	2800      	cmp	r0, #0
+10007f2e:	d04a      	beq.n	10007fc6 <auth_apply_grant+0x9a>
+10007f30:	e92d 41f0 	stmdb	sp!, {r4, r5, r6, r7, r8, lr}
+10007f34:	4616      	mov	r6, r2
+10007f36:	b094      	sub	sp, #80	@ 0x50
+10007f38:	b122      	cbz	r2, 10007f44 <auth_apply_grant+0x18>
+10007f3a:	6883      	ldr	r3, [r0, #8]
+10007f3c:	4604      	mov	r4, r0
+10007f3e:	428b      	cmp	r3, r1
+10007f40:	460d      	mov	r5, r1
+10007f42:	d303      	bcc.n	10007f4c <auth_apply_grant+0x20>
+    ; DEFECT 1 REPLAY: bcc (last_seq < seq). ACT-II.bin flips 0x7F43 0xD3 -> 0xD2 (bcs).
+10007f44:	2000      	movs	r0, #0
+10007f46:	b014      	add	sp, #80	@ 0x50
+10007f48:	e8bd 81f0 	ldmia.w	sp!, {r4, r5, r6, r7, r8, pc}
+10007f4c:	4b1f      	ldr	r3, [pc, #124]	@ (10007fcc <auth_apply_grant+0xa0>)
+10007f4e:	781b      	ldrb	r3, [r3, #0]
+10007f50:	2b00      	cmp	r3, #0
+10007f52:	d0f7      	beq.n	10007f44 <auth_apply_grant+0x18>
+10007f54:	2300      	movs	r3, #0
+10007f56:	22a6      	movs	r2, #166	@ 0xa6
+10007f58:	2701      	movs	r7, #1
+10007f5a:	f8cd 3049 	str.w	r3, [sp, #73]	@ 0x49
+10007f5e:	f88d 203c 	strb.w	r2, [sp, #60]	@ 0x3c
+10007f62:	9301      	str	r3, [sp, #4]
+10007f64:	f8cd 303d 	str.w	r3, [sp, #61]	@ 0x3d
+10007f68:	f8cd 3041 	str.w	r3, [sp, #65]	@ 0x41
+10007f6c:	f8cd 3045 	str.w	r3, [sp, #69]	@ 0x45
+10007f70:	9313      	str	r3, [sp, #76]	@ 0x4c
+10007f72:	aa04      	add	r2, sp, #16
+10007f74:	ab07      	add	r3, sp, #28
+10007f76:	f10d 0828 	add.w	r8, sp, #40	@ 0x28
+10007f7a:	f8cd 1012 	str.w	r1, [sp, #18]
+10007f7e:	f8cd 1016 	str.w	r1, [sp, #22]
+10007f82:	910e      	str	r1, [sp, #56]	@ 0x38
+10007f84:	9302      	str	r3, [sp, #8]
+10007f86:	4812      	ldr	r0, [pc, #72]	@ (10007fd0 <auth_apply_grant+0xa4>)
+10007f88:	230a      	movs	r3, #10
+10007f8a:	9200      	str	r2, [sp, #0]
+10007f8c:	f8cd 800c 	str.w	r8, [sp, #12]
+10007f90:	a90e      	add	r1, sp, #56	@ 0x38
+10007f92:	f8ad 7010 	strh.w	r7, [sp, #16]
+10007f96:	f000 f843 	bl	10008020 <crypto_aead_seal>
+10007f9a:	2800      	cmp	r0, #0
+10007f9c:	d0d2      	beq.n	10007f44 <auth_apply_grant+0x18>
+10007f9e:	4640      	mov	r0, r8
+10007fa0:	4631      	mov	r1, r6
+10007fa2:	f000 f817 	bl	10007fd4 <crypto_aead_tag_equal>
+10007fa6:	2800      	cmp	r0, #0
+10007fa8:	d0cc      	beq.n	10007f44 <auth_apply_grant+0x18>
+10007faa:	e9c4 5501 	strd	r5, r5, [r4, #4]
+10007fae:	8027      	strh	r7, [r4, #0]
+10007fb0:	6835      	ldr	r5, [r6, #0]
+10007fb2:	6871      	ldr	r1, [r6, #4]
+10007fb4:	68b2      	ldr	r2, [r6, #8]
+10007fb6:	68f3      	ldr	r3, [r6, #12]
+10007fb8:	60e5      	str	r5, [r4, #12]
+10007fba:	6121      	str	r1, [r4, #16]
+10007fbc:	6162      	str	r2, [r4, #20]
+10007fbe:	61a3      	str	r3, [r4, #24]
+10007fc0:	b014      	add	sp, #80	@ 0x50
+10007fc2:	e8bd 81f0 	ldmia.w	sp!, {r4, r5, r6, r7, r8, pc}
+10007fc6:	2000      	movs	r0, #0
+10007fc8:	4770      	bx	lr
+10007fca:	bf00      	nop
+10007fcc:	20013965 	.word	0x20013965
+10007fd0:	20013350 	.word	0x20013350
+
+
+
+; -----------------------------------------------------------------------------
+; crypto_aead_open
+; -----------------------------------------------------------------------------
+1000809c <crypto_aead_open>:
+1000809c:	e92d 4ff0 	stmdb	sp!, {r4, r5, r6, r7, r8, r9, sl, fp, lr}
+100080a0:	2500      	movs	r5, #0
+100080a2:	4686      	mov	lr, r0
+100080a4:	460c      	mov	r4, r1
+100080a6:	4699      	mov	r9, r3
+100080a8:	4690      	mov	r8, r2
+100080aa:	b0a3      	sub	sp, #140	@ 0x8c
+100080ac:	9506      	str	r5, [sp, #24]
+100080ae:	6908      	ldr	r0, [r1, #16]
+100080b0:	6949      	ldr	r1, [r1, #20]
+100080b2:	f10d 0c1c 	add.w	ip, sp, #28
+100080b6:	e8ac 0003 	stmia.w	ip!, {r0, r1}
+100080ba:	e9dd 762d 	ldrd	r7, r6, [sp, #180]	@ 0xb4
+100080be:	4670      	mov	r0, lr
+100080c0:	4621      	mov	r1, r4
+100080c2:	aa0a      	add	r2, sp, #40	@ 0x28
+100080c4:	f10d 0a18 	add.w	sl, sp, #24
+100080c8:	f000 faa4 	bl	10008614 <hchacha20>
+100080cc:	4652      	mov	r2, sl
+100080ce:	4629      	mov	r1, r5
+100080d0:	ab12      	add	r3, sp, #72	@ 0x48
+100080d2:	a80a      	add	r0, sp, #40	@ 0x28
+100080d4:	f000 f948 	bl	10008368 <chacha20_block>
+100080d8:	464a      	mov	r2, r9
+100080da:	4641      	mov	r1, r8
+100080dc:	9b2c      	ldr	r3, [sp, #176]	@ 0xb0
+100080de:	a812      	add	r0, sp, #72	@ 0x48
+100080e0:	f8cd a004 	str.w	sl, [sp, #4]
+100080e4:	9700      	str	r7, [sp, #0]
+100080e6:	f000 fd95 	bl	10008c14 <poly1305_mac_aead>
+100080ea:	9a06      	ldr	r2, [sp, #24]
+100080ec:	6833      	ldr	r3, [r6, #0]
+100080ee:	9907      	ldr	r1, [sp, #28]
+100080f0:	4053      	eors	r3, r2
+100080f2:	6872      	ldr	r2, [r6, #4]
+100080f4:	9808      	ldr	r0, [sp, #32]
+100080f6:	404a      	eors	r2, r1
+100080f8:	68b1      	ldr	r1, [r6, #8]
+100080fa:	4313      	orrs	r3, r2
+100080fc:	4041      	eors	r1, r0
+100080fe:	430b      	orrs	r3, r1
+10008100:	68f2      	ldr	r2, [r6, #12]
+10008102:	9909      	ldr	r1, [sp, #36]	@ 0x24
+10008104:	404a      	eors	r2, r1
+10008106:	4313      	orrs	r3, r2
+10008108:	f3c3 2207 	ubfx	r2, r3, #8, #8
+1000810c:	431a      	orrs	r2, r3
+1000810e:	f3c3 4107 	ubfx	r1, r3, #16, #8
+10008112:	430a      	orrs	r2, r1
+10008114:	ea42 6313 	orr.w	r3, r2, r3, lsr #24
+10008118:	f013 03ff 	ands.w	r3, r3, #255	@ 0xff
+1000811c:	d003      	beq.n	10008126 <crypto_aead_open+0x8a>
+    ; DEFECT 2 FORGE: beq (tag difference zero). ACT-II.bin flips 0x811D 0xD0 -> 0xD1 (bne).
+1000811e:	4628      	mov	r0, r5
+10008120:	b023      	add	sp, #140	@ 0x8c
+10008122:	e8bd 8ff0 	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, sl, fp, pc}
+10008126:	9701      	str	r7, [sp, #4]
+10008128:	9303      	str	r3, [sp, #12]
+1000812a:	6920      	ldr	r0, [r4, #16]
+1000812c:	6961      	ldr	r1, [r4, #20]
+1000812e:	ab04      	add	r3, sp, #16
+10008130:	c303      	stmia	r3!, {r0, r1}
+10008132:	992f      	ldr	r1, [sp, #188]	@ 0xbc
+10008134:	a80a      	add	r0, sp, #40	@ 0x28
+10008136:	9100      	str	r1, [sp, #0]
+10008138:	2201      	movs	r2, #1
+1000813a:	9b2c      	ldr	r3, [sp, #176]	@ 0xb0
+1000813c:	a903      	add	r1, sp, #12
+1000813e:	f000 fbbb 	bl	100088b8 <chacha20_xor>
+10008142:	2001      	movs	r0, #1
+10008144:	b023      	add	sp, #140	@ 0x8c
+10008146:	e8bd 8ff0 	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, sl, fp, pc}
+1000814a:	bf00      	nop
+1000814c:	0000      	movs	r0, r0
+	...
+
