@@ -72,7 +72,9 @@ when you fix it. Every fix is provable on a Pico 2 with a Debug Probe.
 | 4 | Fail-open | inverted the fail-mode branch so an authorization timeout unlocks the bolt |
 
 The wire is sealed with XChaCha20-Poly1305, keyed through Argon2id. The
-cryptography is correct. The four defects are not in the cipher. They are in the
+primitives are standard and correctly implemented, but the field passphrase and
+salt are compiled into the image in cleartext, so this is a lab-only key and not
+a secrecy guarantee. The four defects are not in the cipher. They are in the
 stateful policy wrapped around it: freshness, authenticity, state integrity, and
 fail mode. Read the dead, find the doors, and lock them.
 

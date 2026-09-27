@@ -29,9 +29,13 @@ radio.
 
 A sabotage crew called **FROSTLINE** poisoned the gate image at the annex. Their
 implant, **WHITEOUT**, leaves four defects in the compiled firmware. The
-cryptography is perfect. The gate seals every request and every grant with
-XChaCha20-Poly1305 under an Argon2id field key, and the cipher is exactly what it
-claims to be. The defects are all in the stateful policy around the cipher: a
+primitives are standard and correctly implemented: the gate seals every request
+and every grant with XChaCha20-Poly1305 under an Argon2id field key, and the
+cipher is exactly what it claims to be. The boundary is the key material: the
+field passphrase and salt are compiled into the image in cleartext, so anyone
+holding the `.bin` can re-derive the field key. The crypto is lab-only and is
+not a secrecy guarantee. The defects are all in the stateful policy around the
+cipher: a
 grant can be replayed, a forged grant can be accepted, a debugger can flip the
 verdict in plain SRAM, and an authorization timeout can fail open. Operative
 **NIGHTINGALE** pulled the exact compromised image off the annex gate and then
@@ -268,8 +272,11 @@ All four defects are same-size in-place byte patches, so no address moves.
 The crypto core is a correct reference construction. Argon2id derives the field
 key, XChaCha20-Poly1305 seals every frame, and the Poly1305 tag compare is a
 correct constant-time word-wise OR fold. Only the four policy seams were broken.
-Once those bytes are restored, the authenticated envelope is trustworthy.
-Describe the construction honestly in your report.
+Once those bytes are restored, the authenticated envelope verifies as intended
+against anyone who sees only the wire. That is not a secrecy guarantee: the
+field passphrase and salt are embedded in the image, the field key is recoverable
+by anyone holding the `.bin`, and Argon2id at `m=64` KiB is below current
+memory-hardness guidance. Describe the construction honestly in your report.
 
 ---
 
