@@ -120,10 +120,11 @@ in-place same-size patch.
 | Task | Points | Defect | Fix |
 | ---- | ------ | ------ | --- |
 | 1 | 10 | Setup and analysis | vector table, `main`, module map |
-| 2 | 25 | Replay: captured GRANTED reopens the door | restore the anti-replay window |
-| 3 | 25 | Forge: the unlock tag branch is bypassed | restore tag verification |
-| 4 | 25 | State: the wire is authenticated but the verdict boolean is not | restore the authenticated-state check |
-| 5 | 15 | Export, verify, hardware proof, reflection | `ACT-II_fixed.bin`/`.uf2`, verifier, fail-secure proof |
+| 2 | 20 | Replay: captured GRANTED reopens the door | restore the anti-replay window |
+| 3 | 20 | Forge: the unlock tag branch is bypassed | restore tag verification |
+| 4 | 20 | State: the wire is authenticated but the verdict boolean is not | restore the authenticated-state check |
+| 5 | 20 | Fail-open: an authorization timeout unlocks the bolt | restore the fail-secure policy |
+| 6 | 10 | Export, verify, hardware proof, reflection | `ACT-II_fixed.bin`/`.uf2`, verifier, fail-secure proof |
 
 Every defect is an in-place, same-size byte patch, so the shipped artifact can be
 patched without moving any address, exactly like ACT-I.

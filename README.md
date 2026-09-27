@@ -173,7 +173,7 @@ IRON saga. The project it attacks is
 
 - Previous act: Act I, COLD IRON, [CTF_cold-chain-monitor](https://github.com/mytechnotalent/CTF_cold-chain-monitor)
 - This act: Act II, IRON GATE
-- Next act: Act III, IRON VEIN (forthcoming)
+- Next act: Act III, IRON VEIN, [CTF_pipeline-valve-controller](https://github.com/mytechnotalent/CTF_pipeline-valve-controller)
 
 
 <br>

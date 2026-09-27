@@ -199,7 +199,7 @@ monotonic again, and a replay lands on DENIED without moving the bolt.
 
 - The condition byte is the high byte at `0x7F43`; the listing shows the
   halfword `d303` and the on-disk bytes are `03 D3` (little-endian).
-- `cmp r3, r1` is an unsigned unsigned compare of `last_seq` (`r3`) against
+- `cmp r3, r1` is an unsigned compare of `last_seq` (`r3`) against
   `seq` (`r1`). `bcc` means carry clear, so `last_seq < seq`.
 - A common error is reversing the explanation. Under the compromise the accept
   path is taken when the sequence is not strictly greater.
@@ -285,7 +285,7 @@ matched.
   `d003` for `beq.n` and `d103` for `bne.n`, and the file bytes are `03 D0` for
   the fix and `03 D1` for the compromise.
 - The compare is a full word-wise OR of the four tag-difference words, folded
-  into a single zero test at `0x10007FD0`.
+  into a single zero test at `0x10008118`.
 - Full credit requires the inversion explanation: the compromised build accepts
   a non-zero difference and rejects a zero difference.
 - Point out that the rest of the AEAD is correct; only this seam was broken.
@@ -526,7 +526,7 @@ Expected result:
 | 1 | Replay | `0x7F43` | `0x10007F43` | `D2` | `D3` |
 | 2 | Forge | `0x811D` | `0x1000811D` | `D1` | `D0` |
 | 3 | State | `0x6797` | `0x10006797` | `D1` | `D0` |
-| 4 | Fail-open | `0x6BCB` | `0x10006BCB` | `D1` | `D0` |
+| 4 | Fail-open | `0x6BCB` | `0x10006BCB` | `B9` | `B1` |
 
 **Reflection mapping.** The four defects map to real access-control failures:
 

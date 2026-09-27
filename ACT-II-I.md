@@ -100,7 +100,7 @@ not to bolt it shut.
   the recurring monitor loop.
 - Distinguish authentication from authorization, and explain why a sealed frame
   alone does not prove freshness or state integrity.
-- Analyze a signed compare and a conditional-branch byte, and restore a
+- Analyze an unsigned compare and a conditional-branch byte, and restore a
   monotonic anti-replay window from an inverted branch.
 - Analyze a constant-time Poly1305 tag compare and explain why one inverted
   branch authenticates forged frames.
@@ -123,7 +123,7 @@ not to bolt it shut.
 | 2 | GDB connection, breakpoints, memory inspection, SWD debugging, serial console observation |
 | 3 | Bootrom handoff, vector table, reset handler, startup code, XIP, Thumb-bit addressing |
 | 4 | Function boundaries, call graphs, module mapping, literal pools |
-| 5 | Signed and unsigned compare semantics, condition codes, branch inversion, control flow |
+| 5 | Unsigned compare semantics, condition codes, branch inversion, control flow |
 | 6 | Anti-replay sequence windows, authenticated-state tags, TOCTOU and state integrity |
 | 7 | Argon2id memory-hard KDF, XChaCha20-Poly1305 AEAD, Poly1305 tag verification, constant-time comparison |
 | 8 | Fail-secure versus fail-open policy, designed egress, incident reporting |
@@ -213,7 +213,7 @@ corrected reference image) to orient yourself:
 | Module | Anchor function | Address |
 |--------|-----------------|---------|
 | Entry | `main` | `0x10000234` |
-| State machine | `monitor_init` | `0x100067E4` |
+| State machine | `monitor_init` | `0x10006858` |
 | Desk receive path | `monitor_rx_tick` | `0x10006704` |
 | State machine loop | `monitor_step` | `0x100069D4` |
 | Interlock | `sensor_read` | `0x10007080` |
@@ -243,7 +243,7 @@ Annotated disassembly for the key functions is provided in
 1. Initializes USB-CDC stdio, proves the I2C bus, and configures the keypad,
    LCD, radio, LEDs, REX button, servo, and infrared receiver.
 2. Derives the 32-byte field key with Argon2id from a committed passphrase and
-   salt into the SRAM buffer `g_key` at `0x20013374`.
+   salt into the SRAM buffer `g_key` at `0x20013378`.
 3. On a latched PIN, seals an unlock request and sends it to the security desk,
    then shows PENDING and starts the authorization wait.
 4. Drains inbound `+RCV` lines, opens the sealed grant, verifies the
@@ -256,7 +256,7 @@ Annotated disassembly for the key functions is provided in
 
 | Bug # | Name | Severity | Description | Hint |
 |-------|------|----------|-------------|------|
-| **Bug #1** | Replay | **CRITICAL** | The anti-replay branch is inverted, so a captured grant whose sequence is not strictly greater than `last_seq` reopens the door. | Find the signed compare in `auth_apply_grant`. |
+| **Bug #1** | Replay | **CRITICAL** | The anti-replay branch is inverted, so a captured grant whose sequence is not strictly greater than `last_seq` reopens the door. | Find the unsigned compare in `auth_apply_grant`. |
 | **Bug #2** | Forge | **CRITICAL** | The Poly1305 tag-difference branch is inverted, so a forged grant with a non-zero difference authenticates. | The correct branch accepts only a zero difference. |
 | **Bug #3** | State | **CRITICAL** | The authenticated-state gate is bypassed, so a debugger that sets `granted = 1` without recomputing the state tag opens the door. | Look inside the inlined `monitor_grant_release`. |
 | **Bug #4** | Fail-open | **HIGH** | The fail-mode branch is inverted, so an authorization timeout unlocks the bolt instead of leaving it locked. | The correct policy is fail secure. |
@@ -416,7 +416,7 @@ Flash in BOOTSEL mode (hold BOOT, plug in USB) and copy the UF2 onto the
 | SRAM | `0x20000000` | Stack and writable state |
 | Authorization record `g_auth` | `0x20013334` | Verdict, pending flag, `seq`, `last_seq` |
 | Authorization key `g_auth_key` | `0x20013350` | State-tag key material |
-| Derived field key `g_key` | `0x20013374` | 32-byte Argon2id field key |
+| Derived field key `g_key` | `0x20013378` | 32-byte Argon2id field key |
 | Key-ready flag `g_key_ready` | `0x20013963` | True once the field key is installed |
 
 The VA of any file offset is the file offset plus `0x10000000`. Every defect

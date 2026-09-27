@@ -157,7 +157,7 @@ four offsets differ between the two `.bin` images.
 |-----------|--------|-------------|----------------|-----------|
 | **[DOCUMENT]** Located the fail-mode branch at 0x10006BCB | 5 | Address and inlined fail-mode path identified | Approximate | Not found |
 | **[DOCUMENT]** Documented fail-secure versus fail-open on an authorization timeout | 5 | Correct policy and branch semantics | Partial | Wrong |
-| **[DOCUMENT & PATCH]** Patched 0xB9 to 0xB1 so a timeout leaves the bolt locked | 7 | Byte `0xD1` changed to `0xD0` | Wrong byte | Not patched |
+| **[DOCUMENT & PATCH]** Patched 0xB9 to 0xB1 so a timeout leaves the bolt locked | 7 | Byte `0xB9` changed to `0xB1` | Wrong byte | Not patched |
 | **[DOCUMENT]** Explained that an authorization timeout must fail secure | 3 | The bolt stays locked when no grant arrives | Vague | Missing |
 
 ### Task 6: Export and Verify (10 points)
@@ -219,7 +219,7 @@ supply. Keep the 1000 uF capacitor on the servo rail.
 | SRAM | `0x20000000` | Stack and writable state |
 | Authorization record `g_auth` | `0x20013334` | Verdict, pending flag, `seq`, `last_seq` |
 | Authorization key `g_auth_key` | `0x20013350` | State-tag key material |
-| Derived field key `g_key` | `0x20013374` | 32-byte Argon2id field key |
+| Derived field key `g_key` | `0x20013378` | 32-byte Argon2id field key |
 | Key-ready flag `g_key_ready` | `0x20013963` | True once the field key is installed |
 
 The VA of any file offset is the file offset plus `0x10000000`.
