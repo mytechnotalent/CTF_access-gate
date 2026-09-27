@@ -66,7 +66,8 @@ jobs:
           PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_MAKE_PROGRAM=ninja \
-            -DPICO_BOARD=pico2 -DPICO_PLATFORM=rp2350-arm-s
+            -DPICO_BOARD=pico2 -DPICO_PLATFORM=rp2350-arm-s \
+            -DSANDBOX_ONLY=ON
 
       - name: Build
         env:
@@ -76,5 +77,5 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/access_gate_app.uf2
+          files: build/ACT-II.uf2
           generate_release_notes: true
